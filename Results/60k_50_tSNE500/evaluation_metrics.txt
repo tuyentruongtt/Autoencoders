@@ -1,0 +1,16 @@
+Detailed Evaluation Results:
+total_loss: 33.65906835347414
+rec_loss: 4.9690227173268795
+class_loss: 0.0
+pos_loss: 28.690042905509472
+spread_loss: 2.502939274728888e-06
+class_correct: 12000
+class_total: 12000
+avg_total_loss: 0.08975751560926437
+avg_rec_loss: 0.013250727246205012
+avg_class_loss: 0.0
+avg_pos_loss: 0.0765067810813586
+avg_spread_loss: 6.6745047326103684e-09
+classification_accuracy: 100.0
+avg_mse: 0.01325072724558413
+avg_ssim: 0.0778735527563749
