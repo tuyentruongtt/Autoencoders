@@ -151,11 +151,12 @@ class ParticleDataset(Dataset):
         return img
 
 class ParticleDistributionLoss(nn.Module):
-    def __init__(self, lambda_rec=1.0, lambda_pos=1.0, lambda_spread=1.0):
+    def __init__(self, lambda_rec=1.0, lambda_pos=1.0, lambda_spread=1.0, lambda_class=1.0):
         super(ParticleDistributionLoss, self).__init__()
         self.lambda_rec = lambda_rec
         self.lambda_pos = lambda_pos
         self.lambda_spread = lambda_spread
+        self.lambda_class = lambda_class
 
     def forward(self, pred, target, return_components=False):
         reconstruction, class_logits, positions, spreads = pred
@@ -184,7 +185,7 @@ class ParticleDistributionLoss(nn.Module):
         spread_loss = F.mse_loss(spread_mean, first_spread)
 
         total_loss = (self.lambda_rec * rec_loss +
-                     class_loss +
+                     self.lambda_class * class_loss +
                      self.lambda_pos * pos_loss +
                      self.lambda_spread * spread_loss)
         
@@ -292,7 +293,12 @@ def train_model(
 
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    criterion = ParticleDistributionLoss()
+    criterion = ParticleDistributionLoss(
+        lambda_rec=1.0,
+        lambda_class=3.0,     # ← Stronger focus on classification
+        lambda_pos=0.2,       # ← Less emphasis on position accuracy
+        lambda_spread=0.2     # ← Less emphasis on spread prediction
+        )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10)
 
     # Enhanced history dictionary to track detailed metrics
@@ -1032,8 +1038,11 @@ def visualize_latent_space_tsne(features, labels, positions=None, perplexity=30,
         positions_subset = positions
     
     # Reshape features to 2D (N x (C*H*W))
-    features_flat = features_subset.reshape(features_subset.shape[0], -1).numpy()
-    
+    # Pool spatial dimensions: N x C
+    features_pooled = features_subset.mean(axis=(2, 3))  # shape: [N, C]
+
+    # Use pooled features for t-SNE
+    features_flat = features_pooled.numpy()
     # Apply t-SNE
     from sklearn.manifold import TSNE
     print(f"Running t-SNE on {features_flat.shape[0]} samples (this may take a while)...")
@@ -1324,8 +1333,8 @@ def visualize_latent_space(model, data_loader, device=None):
 # Example usage
 def main():
     # Setup
-    image_dir = "/home/jupyter-tuyen/Autoencoders/Images/Dataset/train/images"
-    label_file = "/home/jupyter-tuyen/Autoencoders/Images/Dataset/train/labels.npz"
+    image_dir = "/Users/tuyentruong/Desktop/Images/Dataset/train/images"
+    label_file = "/Users/tuyentruong/Desktop/Images/Dataset/train/labels.npz"
     save_path = "best_model.pth"
 
     # Initialize model
@@ -1343,7 +1352,7 @@ def main():
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        epochs=70,
+        epochs=1,
         save_path=save_path
     )
 
