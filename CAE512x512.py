@@ -54,6 +54,13 @@ class ParticleCAE(nn.Module):
         )
 
         # Classification branch
+        self.classifier_head = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(512, 64),
+            nn.ReLU(),
+            nn.Linear(64, 2)  # Two classes
+        )
         self.class_branch = nn.Sequential(
             nn.Conv2d(512, 2, kernel_size=1),
             nn.AdaptiveAvgPool2d(1)
@@ -105,7 +112,7 @@ class ParticleCAE(nn.Module):
         features = self.encoder(x)
 
         # Get classifications
-        class_logits = self.class_branch(features).squeeze(-1).squeeze(-1)
+        class_logits = self.classifier_head(features)
 
         # Get position estimates (x,y coordinates only)
         positions = self.position_branch(features)
@@ -1343,7 +1350,7 @@ def main():
         model=model,
         train_loader=train_loader,
         val_loader=val_loader,
-        epochs=70,
+        epochs=50,
         save_path=save_path
     )
 
