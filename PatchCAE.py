@@ -8,12 +8,11 @@ from PIL import Image
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
+from collections import defaultdict
 
 class ParticlePatchCAE(nn.Module):
     def __init__(self, input_channels=3, input_size=64, latent_dim=64, num_classes=2):
         super(ParticlePatchCAE, self).__init__()
-
-        self.feature_size = input_size // 16
 
         self.encoder = nn.Sequential(
             nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),
@@ -111,11 +110,104 @@ def visualize_latent_space(features, labels, save_path='tsne_latent.png'):
     plt.title('t-SNE of Latent Space')
     plt.savefig(save_path)
     plt.close()
+    
+def visualize_reconstructions(model, dataloader, num_samples=5, save_path='reconstructions.png'):
+    """
+    Visualize original images and their reconstructions side by side
+    
+    Args:
+        model: Trained ParticlePatchCAE model
+        dataloader: DataLoader with image data
+        num_samples: Number of samples to visualize
+        save_path: Path to save the visualization
+    """
+    model.eval()
+    plt.figure(figsize=(12, 2 * num_samples))
+    
+    with torch.no_grad():
+        for i, (images, labels) in enumerate(dataloader):
+            if i >= num_samples:
+                break
+                
+            reconstructions, _, _ = model(images)
+            
+            # Get the first image from the batch
+            orig_img = images[0].cpu().numpy().transpose(1, 2, 0)
+            recon_img = reconstructions[0].cpu().numpy().transpose(1, 2, 0)
+            
+            # Plot original
+            plt.subplot(num_samples, 2, i*2 + 1)
+            plt.imshow(orig_img)
+            plt.title(f"Original (Class {labels[0].item()})")
+            plt.axis('off')
+            
+            # Plot reconstruction
+            plt.subplot(num_samples, 2, i*2 + 2)
+            plt.imshow(recon_img)
+            plt.title(f"Reconstruction")
+            plt.axis('off')
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    
+    print(f"Reconstructions saved to {save_path}")
 
+def visualize_by_class(model, dataloader, save_path='class_reconstructions.png'):
+    """
+    Create a grid of reconstructions organized by class
+    """
+    model.eval()
+    class_samples = {0: [], 1: []}  # Assuming 2 classes
+    
+    # Collect samples by class
+    with torch.no_grad():
+        for images, labels in dataloader:
+            for i in range(len(images)):
+                img = images[i:i+1]
+                label = labels[i].item()
+                
+                if len(class_samples[label]) < 5:  # Get 5 samples of each class
+                    recon, _, features = model(img)
+                    
+                    # Store original, reconstruction and its latent features
+                    class_samples[label].append({
+                        'original': img[0].cpu().numpy().transpose(1, 2, 0),
+                        'reconstruction': recon[0].cpu().numpy().transpose(1, 2, 0),
+                        'features': features[0].cpu().numpy()
+                    })
+    
+    # Create visualization
+    num_classes = len(class_samples)
+    samples_per_class = min([len(samples) for samples in class_samples.values()])
+    
+    plt.figure(figsize=(10, 2 * num_classes * samples_per_class))
+    
+    for class_idx in range(num_classes):
+        for i in range(samples_per_class):
+            sample = class_samples[class_idx][i]
+            
+            # Original
+            plt.subplot(num_classes * samples_per_class, 2, (class_idx * samples_per_class + i) * 2 + 1)
+            plt.imshow(sample['original'])
+            plt.title(f"Class {class_idx} - Original")
+            plt.axis('off')
+            
+            # Reconstruction
+            plt.subplot(num_classes * samples_per_class, 2, (class_idx * samples_per_class + i) * 2 + 2)
+            plt.imshow(sample['reconstruction'])
+            plt.title(f"Class {class_idx} - Reconstruction")
+            plt.axis('off')
+    
+    plt.tight_layout()
+    plt.savefig(save_path)
+    plt.close()
+    
+    print(f"Class-based reconstructions saved to {save_path}")
 
 def train_patch_cae():
-    image_dir = 'path_to_rgb_images/'
-    label_dir = 'path_to_label_txts/'
+    image_dir = '/home/jupyter-tuyen/PatchCAE/PatchCAE_images/Dataset/train/images'
+    label_dir = '/home/jupyter-tuyen/PatchCAE/PatchCAE_images/Dataset/train/labels'
 
     transform = transforms.Compose([
         transforms.Resize((64, 64)),
@@ -172,3 +264,40 @@ def train_patch_cae():
 
 if __name__ == "__main__":
     train_patch_cae()
+
+def evaluate_model():
+    # Define the transform again
+    transform = transforms.Compose([
+        transforms.Resize((64, 64)),
+        transforms.ToTensor()
+    ])
+    # Load the trained model
+    model = ParticlePatchCAE()
+    model.load_state_dict(torch.load('particle_patch_cae.pth'))
+    model.eval()
+    
+    # Create a test dataloader with a small batch size
+    test_image_dir = '/home/jupyter-tuyen/PatchCAE/PatchCAE_images/Dataset/test/images'
+    test_label_dir = '/home/jupyter-tuyen/PatchCAE/PatchCAE_images/Dataset/test/labels'
+    
+    test_dataset = ParticleAnnotationDataset(test_image_dir, test_label_dir, transform=transform)
+    test_dataloader = DataLoader(test_dataset, batch_size=1, shuffle=True)
+    
+    # Visualize reconstructions
+    visualize_reconstructions(model, test_dataloader, num_samples=5, save_path='particle_reconstructions.png')
+    
+    # You can also compute quantitative metrics here
+    total_loss = 0
+    criterion_recon = nn.MSELoss()
+    
+    with torch.no_grad():
+        for images, labels in test_dataloader:
+            recon, logits, _ = model(images)
+            loss = criterion_recon(recon, images)
+            total_loss += loss.item()
+    
+    avg_loss = total_loss / len(test_dataloader)
+    print(f"Average reconstruction loss on test set: {avg_loss:.4f}")
+
+# Call this after training is complete
+evaluate_model()
